@@ -1,0 +1,14 @@
+# Секреты и локальные конфиги — не коммитить (шаблон: config/properties.example.json)
+config/properties.json
+
+# Промежуточные данные
+temp/*
+
+# Результаты и состояние
+out/
+registry.json
+log/
+
+# Python
+__pycache__/
+*.pyc
