@@ -1,6 +1,7 @@
 import os, json, hashlib, sys
 from datetime import datetime
 sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+import config_reader
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REGISTRY_PATH = os.path.join(BASE, "registry.json")
@@ -21,8 +22,7 @@ def kind_of(name):
     return "ticket"
 
 def event_of(name):
-    parts = name.split(" - ")
-    return parts[1].strip() if len(parts) >= 2 else ""
+    return config_reader.event_of(name)
 
 def load():
     if os.path.exists(REGISTRY_PATH):

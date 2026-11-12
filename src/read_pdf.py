@@ -10,6 +10,10 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TEMP = os.path.join(BASE, "temp")
 TEXTS_JSON = os.path.join(TEMP, "texts.json")
 
+PDF_EXTS = (".pdf",)
+IMG_EXTS = (".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp")
+DOC_EXTS = PDF_EXTS + IMG_EXTS
+
 _ocr = None
 def get_ocr():
     global _ocr
@@ -48,20 +52,20 @@ def extract_text(path):
     return text, "TEXT"
 
 def main():
-    ap = argparse.ArgumentParser(description="Чтение PDF → temp/texts.json")
-    ap.add_argument("folder", help="Папка с PDF-билетами")
+    ap = argparse.ArgumentParser(description="Чтение документов (PDF/изображения) → temp/texts.json")
+    ap.add_argument("folder", help="Папка с документами (PDF, PNG, JPG, ...)")
     args = ap.parse_args()
     folder = os.path.abspath(args.folder)
 
     os.makedirs(TEMP, exist_ok=True)
     reg = registry.load()
-    pdfs = sorted(f for f in os.listdir(folder) if f.lower().endswith(".pdf"))
-    new_files = [f for f in pdfs if not registry.is_processed(reg, os.path.join(folder, f))]
+    docs = sorted(f for f in os.listdir(folder) if os.path.splitext(f)[1].lower() in DOC_EXTS)
+    new_files = [f for f in docs if not registry.is_processed(reg, os.path.join(folder, f))]
 
-    print(f"PDF всего: {len(pdfs)} | новых: {len(new_files)}")
+    print(f"Документов всего: {len(docs)} | новых: {len(new_files)}")
     result = {}
     for f in new_files:
-        text, method = extract_text(os.path.join(folder, f))
+        text, method = extract(os.path.join(folder, f))
         result[f] = {"text": text, "method": method}
         print(f"   [{method}] {f} ({len(text)} зн.)")
 

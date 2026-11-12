@@ -19,8 +19,8 @@ SYSTEM_PROMPT = (
     "Return STRICTLY one JSON object, no prose, no markdown fences:\n"
     '{"tickets": [...], "checks": [...], "refunds": [...]}\n\n'
     "Ticket fields (each object in tickets):\n"
-    '- "ticket_type": "air" | "rail" | "bus"\n'
-    '- "carrier": string (SCAT, Aeroflot, RZD, Utair, Pobeda, Ural Airlines, ...)\n'
+    '- "ticket_type": "air" | "rail" | "bus" (infer from the text: flight → air, train → rail, bus → bus)\n'
+    '- "carrier": string — any company name (airline / railway / bus operator / ferry, ...)\n'
     '- "passenger_raw": full name exactly as written\n'
     '- "passenger_surname": surname in Cyrillic (transliterate Latin: KALAEV→Калаев, IURII→Юрий, TKACHEV→Ткачёв)\n'
     '- "passenger_name": given name in Cyrillic\n'
@@ -39,18 +39,16 @@ SYSTEM_PROMPT = (
     '- "date": "YYYY-MM-DD"\n'
     '- "items": array of {"tkt_number": "13-digit ticket number (drop the trailing check digit)", "amount": refunded amount for this ticket}\n\n'
     "Rules:\n"
+    "- A single PDF/image may contain SEVERAL documents at once — e.g. a ticket (or several tickets) AND a cash receipt. Recognize and return ALL of them (tickets and checks together), never just one.\n"
+    "- A TICKET is any travel document that has a passenger name AND a ticket/document number (a long digit string, often labeled \"Билет №\", \"Номер билета\", \"Ticket number\", \"№\") AND a route (from → to). It can be air, rail, bus, ferry, etc. — do not rely on a specific carrier or layout.\n"
     "- If the text contains several tickets (several passengers) return several objects in tickets.\n"
-    "- If it is a cash receipt return tickets:[] and one object in checks.\n"
-    '- If it is a REFUND ("Возврат прихода") return tickets:[] and one object in refunds (items from the "TKT - <number>" lines).\n'
+    "- A CASH RECEIPT is a document with \"Кассовый чек\", \"ФД\", \"ИТОГО\", and/or \"TKT - <number>\" lines — return it in checks.\n"
+    '- A REFUND ("Возврат прихода") — return it in refunds (items from the "TKT - <number>" lines).\n'
     "- Do not confuse issue_date with flight/travel date.\n"
     '- Take TOTAL amount (labels "Итого", "Total", "Сумма платежа"), not the taxes sum.\n'
     "- Translate months to numbers: января→01, окт.→10, Oct→10, SEP→09, ...\n"
     '- If a field is missing use null (numbers) or "" (strings).'
 )
-
-def event_of(name):
-    parts = name.split(" - ")
-    return parts[1].strip() if len(parts) >= 2 else ""
 
 def call_llm(text, llm):
     url = llm["base_url"].rstrip("/") + "/chat/completions"
@@ -103,7 +101,7 @@ def main():
         except Exception as ex:
             print(f"  FAIL {f}: {ex}")
             continue
-        ev = event_of(f)
+        ev = config_reader.event_of(f)
         for t in res.get("tickets", []):
             t["source_file"] = f
             t["event"] = ev

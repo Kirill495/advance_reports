@@ -1,5 +1,6 @@
-# Секреты и локальные конфиги — не коммитить (шаблон: config/properties.example.json)
+# Секреты и локальные конфиги — не коммитить (шаблоны: config/*.example.json)
 config/properties.json
+config/events.json
 
 # Промежуточные данные
 temp/*
