@@ -17,7 +17,7 @@ RECOGNITION_JSON = os.path.join(TEMP, "recognition.json")
 SYSTEM_PROMPT = (
     "Extract structured data from the text of a travel ticket or cash receipt (text was extracted from a PDF). "
     "Return STRICTLY one JSON object, no prose, no markdown fences:\n"
-    '{"tickets": [...], "checks": [...]}\n\n'
+    '{"tickets": [...], "checks": [...], "refunds": [...]}\n\n'
     "Ticket fields (each object in tickets):\n"
     '- "ticket_type": "air" | "rail" | "bus"\n'
     '- "carrier": string (SCAT, Aeroflot, RZD, Utair, Pobeda, Ural Airlines, ...)\n'
@@ -32,12 +32,16 @@ SYSTEM_PROMPT = (
     '- "currency": "RUB"\n\n'
     "Check fields (each object in checks):\n"
     '- "fd": FD number (value after "ФД:" or "№ ФД:")\n'
-    '- "tkt_numbers": array of ticket numbers. Air tickets are usually 13 digits, rail (ФПК/РЖД) are 14 digits — take the FULL number as written, never truncate. In a line like "1. TKT - 65521029281131 шт" the number is "6552102928113" and "1 шт" is the quantity — do NOT merge the quantity into the number.\n'
+    '- "tkt_numbers": array of ticket numbers, digits only. AIR: the ticket number is 13 digits, but the receipt often prints 13 digits + 1 trailing check digit = 14 digits — take ONLY the first 13 digits (drop the trailing check digit). RAIL (ФПК/РЖД): the number is 14 digits, take all 14. In a line like "1. TKT - 65521029281131 шт" the number is "6552102928113" and "1 шт" is the quantity — never merge the quantity.\n'
     '- "date": "YYYY-MM-DD" (receipt date)\n\n'
+    "Refund fields (one object in refunds, only for a REFUND receipt \"Возврат прихода\"):\n"
+    '- "fd": FD number\n'
+    '- "date": "YYYY-MM-DD"\n'
+    '- "items": array of {"tkt_number": "13-digit ticket number (drop the trailing check digit)", "amount": refunded amount for this ticket}\n\n'
     "Rules:\n"
     "- If the text contains several tickets (several passengers) return several objects in tickets.\n"
     "- If it is a cash receipt return tickets:[] and one object in checks.\n"
-    '- If it is a refund ("Возврат прихода") return {"tickets": [], "checks": [], "note": "возврат"}.\n'
+    '- If it is a REFUND ("Возврат прихода") return tickets:[] and one object in refunds (items from the "TKT - <number>" lines).\n'
     "- Do not confuse issue_date with flight/travel date.\n"
     '- Take TOTAL amount (labels "Итого", "Total", "Сумма платежа"), not the taxes sum.\n'
     "- Translate months to numbers: января→01, окт.→10, Oct→10, SEP→09, ...\n"
@@ -77,11 +81,14 @@ def main():
         return
 
     llm = config_reader.llm_config()
-    recog = json.load(open(RECOGNITION_JSON, encoding="utf-8")) if os.path.exists(RECOGNITION_JSON) else {"tickets": [], "checks": []}
+    recog = json.load(open(RECOGNITION_JSON, encoding="utf-8")) if os.path.exists(RECOGNITION_JSON) else {"tickets": [], "checks": [], "refunds": []}
     recog.setdefault("tickets", [])
     recog.setdefault("checks", [])
+    recog.setdefault("refunds", [])
 
-    known = {t.get("source_file") for t in recog["tickets"]} | {c.get("source_file") for c in recog["checks"]}
+    known = ({t.get("source_file") for t in recog["tickets"]}
+             | {c.get("source_file") for c in recog["checks"]}
+             | {r.get("source_file") for r in recog["refunds"]})
     todo = [f for f in texts if f not in known]
 
     if not todo:
@@ -89,7 +96,7 @@ def main():
         return
 
     print(f"Распознаю {len(todo)} файлов (модель {llm.get('model')})...")
-    added_t = added_c = 0
+    added_t = added_c = added_r = 0
     for f in todo:
         try:
             res = call_llm(texts[f]["text"], llm)
@@ -107,13 +114,16 @@ def main():
             c["event"] = ev
             recog["checks"].append(c)
             added_c += 1
-        note = res.get("note", "")
-        print(f"  OK {f}: +{len(res.get('tickets', []))} билетов, +{len(res.get('checks', []))} чеков"
-              + (f" [{note}]" if note else ""))
+        for r in res.get("refunds", []):
+            r["source_file"] = f
+            r["event"] = ev
+            recog["refunds"].append(r)
+            added_r += 1
+        print(f"  OK {f}: +{len(res.get('tickets', []))} билетов, +{len(res.get('checks', []))} чеков, +{len(res.get('refunds', []))} возвратов")
 
     with open(RECOGNITION_JSON, "w", encoding="utf-8") as fh:
         json.dump(recog, fh, ensure_ascii=False, indent=2)
-    print(f"\nРаспознавание завершено: добавлено билетов {added_t}, чеков {added_c}. Сохранено в {RECOGNITION_JSON}")
+    print(f"\nРаспознавание завершено: билетов {added_t}, чеков {added_c}, возвратов {added_r}. Сохранено в {RECOGNITION_JSON}")
 
 if __name__ == "__main__":
     main()

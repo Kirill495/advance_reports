@@ -91,8 +91,23 @@ def main():
 
     tkt_to_check = {}
     for c in recog["checks"]:
-        for t in c["tkt_numbers"]:
-            tkt_to_check[t] = c
+        for n in c["tkt_numbers"]:
+            tkt_to_check[n] = c
+            if len(n) == 14:
+                tkt_to_check[n[:13]] = c  # авиа-чек: 13 знаков + контрольная цифра
+
+    tkt_to_refund = {}
+    for r in recog.get("refunds", []):
+        for it in r.get("items", []):
+            n = it.get("tkt_number", "")
+            info = {
+                "amount": it.get("amount", 0) or 0,
+                "fd": r.get("fd", ""),
+                "date": r.get("date", ""),
+            }
+            tkt_to_refund[n] = info
+            if len(n) == 14:
+                tkt_to_refund[n[:13]] = info
 
     def person(t):
         ms = fetch_eq(t["passenger_surname"], t["passenger_name"])
@@ -125,13 +140,27 @@ def main():
         route = t["route"].replace(" → ", "-")
         content = f"{surname} {initials} {t['ticket_number']}, {route}"
         chk = tkt_to_check.get(t["ticket_number"])
+        refund = tkt_to_refund.get(t["ticket_number"])
+        refund_amt = refund["amount"] if refund else 0
+        amount = round((t["amount"] or 0) - refund_amt, 2)
+        if refund:
+            # входящий документ — чек возврата; в содержании ссылаемся на исходный чек
+            incoming_type = "Кассовый чек"
+            incoming_number = refund["fd"]
+            incoming_date = refund["date"]
+            if chk:
+                content += f", ВОЗВРАТ; Исходный чек: {chk['fd']}"
+        else:
+            incoming_type = "Кассовый чек" if chk else "Билет"
+            incoming_number = chk["fd"] if chk else t["ticket_number"]
+            incoming_date = chk["date"] if chk else t["issue_date"]
         rows_by_event[t["event"]].append({
             "content": content, "surname": surname,
             "ticket_type": t["ticket_type"],
-            "amount": t["amount"], "ticket_number": t["ticket_number"],
-            "incoming_type": "Кассовый чек" if chk else "Билет",
-            "incoming_number": chk["fd"] if chk else t["ticket_number"],
-            "incoming_date": (chk["date"] if chk else t["issue_date"]),
+            "amount": amount, "ticket_number": t["ticket_number"],
+            "incoming_type": incoming_type,
+            "incoming_number": incoming_number,
+            "incoming_date": incoming_date,
             "source_file": t["source_file"],
         })
 
