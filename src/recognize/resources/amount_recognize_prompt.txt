@@ -1,0 +1,3 @@
+Extract the FINAL ticket price in rubles from the Russian Railways (RZD) e-ticket text (the value following the word "Итого", usually located after the "Вкл. НДС" line).
+Return STRICTLY a single number, for example 2480.00, without any text, currency symbols (₽), or explanations.
+If not found, return 0.

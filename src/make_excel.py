@@ -17,17 +17,18 @@ def main():
     args = ap.parse_args()
     out_dir = os.path.abspath(args.out_dir)
 
-    recog = json.load(open(os.path.join(TEMP, "recognition.json"), encoding="utf-8"))
-    travel_dates = json.load(open(os.path.join(TEMP, "travel_dates.json"), encoding="utf-8"))
+    # Итоговые строки текущей загрузки (write_1c.py → temp/final_rows.json)
+    rows_path = os.path.join(TEMP, "final_rows.json")
+    rows = json.load(open(rows_path, encoding="utf-8")) if os.path.exists(rows_path) else []
+
+    td_path = os.path.join(TEMP, "travel_dates.json")
+    travel_dates = json.load(open(td_path, encoding="utf-8")) if os.path.exists(td_path) else {}
+
+    # Номер авансового отчёта: из свежего run_result.json, иначе из реестра
+    result_path = os.path.join(TEMP, "run_result.json")
+    run_result = json.load(open(result_path, encoding="utf-8")) if os.path.exists(result_path) else {}
+    report_by_event = {d["event"]: d.get("number", "") for d in run_result.get("documents", [])}
     reg = registry.load()
-
-    tickets = recog["tickets"]
-    checks = recog["checks"]
-
-    tkt_to_check = {}
-    for c in checks:
-        for t in c["tkt_numbers"]:
-            tkt_to_check[t] = c
 
     wb = Workbook()
     ws = wb.active
@@ -36,16 +37,15 @@ def main():
     for cell in ws[1]:
         cell.font = Font(bold=True)
 
-    for t in sorted(tickets, key=lambda x: (x["event"], x["passenger_surname"], x["passenger_name"])):
-        chk = tkt_to_check.get(t["ticket_number"])
-        td = travel_dates.get(t["source_file"])
+    for r in sorted(rows, key=lambda x: (x["event"], x["surname"], x["name"])):
+        td = travel_dates.get(r["source_file"])
         travel = datetime.strptime(td, "%Y-%m-%d").date() if td else ""
-        chk_date = datetime.strptime(chk["date"], "%Y-%m-%d").date() if (chk and chk.get("date")) else ""
-        rep = reg["reports"].get(t["event"], {})
-        ws.append([t["event"], f'{t["passenger_surname"]} {t["passenger_name"]}', t["route"], travel,
-                   TYPE_MAP.get(t["ticket_type"], t["ticket_type"]), float(t["amount"]),
-                   chk["fd"] if chk else "", chk_date, rep.get("number", ""),
-                   t.get("source_file", ""), chk["source_file"] if chk else ""])
+        chk_date = datetime.strptime(r["chk_date"], "%Y-%m-%d").date() if r.get("chk_date") else ""
+        rep_number = report_by_event.get(r["event"], reg["reports"].get(r["event"], {}).get("number", ""))
+        ws.append([r["event"], f'{r["surname"]} {r["name"]}', r["route"], travel,
+                   TYPE_MAP.get(r["ticket_type"], r["ticket_type"]), float(r["amount"]),
+                   r.get("chk_fd", ""), chk_date, rep_number,
+                   r.get("source_file", ""), r.get("chk_file", "")])
 
     for col, w in [("A",14),("B",24),("C",34),("D",12),("E",10),("F",12),("G",12),("H",12),("I",18),("J",60),("K",60)]:
         ws.column_dimensions[col].width = w
@@ -65,11 +65,10 @@ def main():
     filename = "uploaded_tickets_" + datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + ".xlsx"
     path = os.path.join(out_dir, filename)
     wb.save(path)
-    print(f"Excel сохранён: {path} | строк билетов: {len(tickets)}")
+    print(f"Excel сохранён: {path} | строк билетов: {len(rows)}")
 
     # путь к Excel — в сводку для письма
-    result_path = os.path.join(TEMP, "run_result.json")
-    result = json.load(open(result_path, encoding="utf-8")) if os.path.exists(result_path) else {}
+    result = run_result
     result["excel"] = path
     with open(result_path, "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=2)

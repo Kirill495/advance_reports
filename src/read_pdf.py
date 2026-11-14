@@ -5,6 +5,7 @@ log_config.setup(os.environ.get("RUN_LOG"))
 
 import pymupdf
 import registry
+import qr_ffd
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TEMP = os.path.join(BASE, "temp")
@@ -37,7 +38,12 @@ def ocr_pdf(doc, tmp_png):
         parts.append("\n".join(t for _, t, _ in (res or [])))
     return "\n".join(parts)
 
-def extract_text(path):
+def extract(path):
+    """Извлекает текст документа. PDF — текстовый слой (+OCR-фолбэк), изображение — OCR."""
+    ext = os.path.splitext(path)[1].lower()
+    if ext in IMG_EXTS:
+        res, _ = get_ocr()(path)
+        return "\n".join(t for _, t, _ in (res or [])), "OCR"
     doc = pymupdf.open(path)
     text = "\n".join(pg.get_text() for pg in doc)
     cyr = sum(1 for ch in text if 'А' <= ch <= 'я' or ch in 'Ёё')
@@ -65,9 +71,12 @@ def main():
     print(f"Документов всего: {len(docs)} | новых: {len(new_files)}")
     result = {}
     for f in new_files:
-        text, method = extract(os.path.join(folder, f))
-        result[f] = {"text": text, "method": method}
-        print(f"   [{method}] {f} ({len(text)} зн.)")
+        path = os.path.join(folder, f)
+        text, method = extract(path)
+        qr = qr_ffd.extract_checks(path)
+        result[f] = {"text": text, "method": method, "qr": qr}
+        qr_note = f", QR-чеков: {len(qr)}" if qr else ""
+        print(f"   [{method}] {f} ({len(text)} зн.{qr_note})")
 
     with open(TEXTS_JSON, "w", encoding="utf-8") as fh:
         json.dump(result, fh, ensure_ascii=False, indent=2)

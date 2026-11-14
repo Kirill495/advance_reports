@@ -1,0 +1,7 @@
+Transliterate the Russian passenger name from Latin (passport transliteration) to Cyrillic. Return STRICTLY one JSON object, no prose, no markdown fences:
+{"surname": "...", "name": "...", "patronymic": "..."}
+
+Use the natural Russian spelling (including ё where appropriate). Example:
+GRACHEV ALEKSANDR DMITRIEVICH → {"surname": "Грачёв", "name": "Александр", "patronymic": "Дмитриевич"}
+
+If a field is absent use "".

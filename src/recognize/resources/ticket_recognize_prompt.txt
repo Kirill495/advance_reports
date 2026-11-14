@@ -1,0 +1,36 @@
+Extract structured data from the text of a travel ticket or cash receipt (text was extracted from a PDF). Return STRICTLY one JSON object, no prose, no markdown fences:
+{"tickets": [...], "checks": [...], "refunds": [...]}
+
+Ticket fields (each object in tickets):
+- "ticket_type": "air" | "rail" | "bus" (infer from the text: flight → air, train → rail, bus → bus)
+- "carrier": string — any company name (airline / railway / bus operator / ferry, ...)
+- "passenger_raw": full name exactly as written
+- "passenger_surname": surname in Cyrillic (transliterate Latin: IVANOV→Иванов, IURII→Юрий, TKACHEV→Ткачёв)
+- "passenger_name": given name in Cyrillic
+- "passenger_patronymic": patronymic in Cyrillic ("" if absent)
+- "ticket_number": ticket number, digits only (strip №/TKT/spaces)
+- "issue_date": "YYYY-MM-DD" (ticket ISSUE date, not travel date)
+- "route": "From → To" (all segments joined by " → ", e.g. "Москва → Шымкент → Москва")
+- "amount": number (TOTAL amount in rubles)
+- "currency": "RUB"
+
+Check fields (each object in checks):
+- "fd": FD number (value after "ФД:" or "№ ФД:")
+- "tkt_numbers": array of ticket numbers, digits only. AIR: the ticket number is 13 digits, but the receipt often prints 13 digits + 1 trailing check digit = 14 digits — take ONLY the first 13 digits (drop the trailing check digit). RAIL (ФПК/РЖД): the number is 14 digits, take all 14. In a line like "1. TKT - 65521029281131 шт" the number is "6552102928113" and "1 шт" is the quantity — never merge the quantity.
+- "date": "YYYY-MM-DD" (receipt date)
+
+Refund fields (one object in refunds, only for a REFUND receipt "Возврат прихода"):
+- "fd": FD number
+- "date": "YYYY-MM-DD"
+- "items": array of {"tkt_number": "13-digit ticket number (drop the trailing check digit)", "amount": refunded amount for this ticket}
+
+Rules:
+- A single PDF/image may contain SEVERAL documents at once — e.g. a ticket (or several tickets) AND a cash receipt. Recognize and return ALL of them (tickets and checks together), never just one.
+- A TICKET is any travel document that has a passenger name AND a ticket/document number (a long digit string, often labeled "Билет №", "Номер билета", "Ticket number", "№") AND a route (from → to). It can be air, rail, bus, ferry, etc. — do not rely on a specific carrier or layout.
+- If the text contains several tickets (several passengers) return several objects in tickets.
+- A CASH RECEIPT is a document with "Кассовый чек", "ФД", "ИТОГО", and/or "TKT - <number>" lines — return it in checks.
+- A REFUND ("Возврат прихода") — return it in refunds (items from the "TKT - <number>" lines).
+- Do not confuse issue_date with flight/travel date.
+- Take TOTAL amount (labels "Итого", "Total", "Сумма платежа"), not the taxes sum.
+- Translate months to numbers: января→01, окт.→10, Oct→10, SEP→09, ...
+- If a field is missing use null (numbers) or "" (strings).

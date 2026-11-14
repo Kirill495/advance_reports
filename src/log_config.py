@@ -68,7 +68,12 @@ class _Tee:
         return getattr(self._console, name)
 
 def setup(log_file=None):
-    """Перенаправляет stdout/stderr в консоль И в файл лога (с метками времени). Возвращает путь к логу."""
+    """Перенаправляет stdout/stderr в консоль И в файл лога (с метками времени). Возвращает путь к логу.
+
+    log_file == '' — явное отключение перехвата (родитель логирует сам); возвращает ''.
+    """
+    if log_file == "":
+        return ""
     os.makedirs(LOG_DIR, exist_ok=True)
     if log_file is None:
         log_file = os.path.join(LOG_DIR, "run_" + datetime.now().strftime("%Y-%m-%d") + ".log")
@@ -81,3 +86,24 @@ def setup(log_file=None):
     sys.stdout = _Tee(sys.stdout, tfile)
     sys.stderr = _Tee(sys.stderr, tfile)
     return log_file
+
+
+def setup_stream(queue, log_file=None):
+    """UI-режим: возвращает file-like объект, который пишет данные и в очередь
+    (для вывода в интерфейс), и в файл лога (с метками времени). Возвращает (sink, путь_к_логу)."""
+    os.makedirs(LOG_DIR, exist_ok=True)
+    if log_file is None:
+        log_file = os.path.join(LOG_DIR, "run_" + datetime.now().strftime("%Y-%m-%d") + ".log")
+    fh = open(log_file, "a", encoding="utf-8")
+    tfile = _TimestampedFile(fh)
+
+    class _QueueTee:
+        def write(self, data):
+            if data:
+                queue.put(data)
+                tfile.write(data)
+
+        def flush(self):
+            tfile.flush()
+
+    return _QueueTee(), log_file
